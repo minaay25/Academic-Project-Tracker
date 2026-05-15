@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Academic Project Tracker</title>
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('home') }}">Home</a>
+        {% if session['user_id'] %}
+            <span>| Welcome, {{ session['username'] }}</span>
+            <a href="{{ url_for('logout') }}">| Logout</a>
+        {% else %}
+            <a href="{{ url_for('register') }}">| Register</a>
+            <a href="{{ url_for('login') }}">| Login</a>
+        {% endif %}
+    </nav>
+    <hr>
+
+    {% for message in get_flashed_messages() %}
+        <div style="color: red; font-weight: bold;">{{ message }}</div>
+    {% endfor %}
+
+    {% block content %}{% endblock %}
+</body>
+</html>
