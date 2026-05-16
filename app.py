@@ -1,8 +1,9 @@
 import sqlite3
+from datetime import datetime
 from flask import Flask, render_template, request, session, redirect, url_for, flash
 
 app = Flask(__name__)
-# Session (oturum) yönetimi için zorunlu gizli anahtar
+# Secret key for session management
 app.secret_key = "academic_project_tracker_secret" 
 
 # Database connection helper
@@ -11,12 +12,59 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-# Home Route
+# Dashboard (Home) Route [US1]
 @app.route('/')
 def home():
-    if 'user_id' in session:
-        return "Dashboard will be here!" # We will replace this with HTML later
-    return redirect(url_for('login'))
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    db = get_db_connection()
+    # Data Isolation: Only fetch projects belonging to the logged-in user
+    projects = db.execute(
+        'SELECT * FROM projects WHERE user_id = ? ORDER BY deadline ASC', 
+        (session['user_id'],)
+    ).fetchall()
+    
+    # Calculate remaining days for each project [US1 Business Logic]
+    project_list = []
+    today = datetime.now().date()
+    
+    for p in projects:
+        p_dict = dict(p)
+        deadline_date = datetime.strptime(p['deadline'], '%Y-%m-%d').date()
+        delta = (deadline_date - today).days
+        
+        if delta < 0:
+            p_dict['status'] = 'Overdue'
+        else:
+            p_dict['status'] = f"{delta} Days Remaining"
+            
+        project_list.append(p_dict)
+
+    return render_template('dashboard.html', projects=project_list)
+
+# Create Project Route [US1]
+@app.route('/create_project', methods=('GET', 'POST'))
+def create_project():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    if request.method == 'POST':
+        title = request.form['title']
+        description = request.form['description']
+        start_date = request.form['start_date']
+        deadline = request.form['deadline']
+        budget = request.form.get('budget', 0)
+        
+        db = get_db_connection()
+        db.execute(
+            'INSERT INTO projects (user_id, title, description, start_date, deadline, budget) VALUES (?, ?, ?, ?, ?, ?)',
+            (session['user_id'], title, description, start_date, deadline, budget)
+        )
+        db.commit()
+        return redirect(url_for('home'))
+        
+    return render_template('create_project.html')
 
 # Register Route
 @app.route('/register', methods=('GET', 'POST'))

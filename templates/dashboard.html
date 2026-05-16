@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h2>My Academic Projects</h2>
+    <a href="{{ url_for('create_project') }}"><button>+ Create New Project</button></a>
+    <br><br>
+
+    <table border="1" cellpadding="10" cellspacing="0">
+        <tr>
+            <th>Project Title</th>
+            <th>Description</th>
+            <th>Deadline</th>
+            <th>Status / Time Left</th>
+        </tr>
+        {% for project in projects %}
+        <tr>
+            <td>{{ project.title }}</td>
+            <td>{{ project.description }}</td>
+            <td>{{ project.deadline }}</td>
+            <td style="font-weight: bold; color: {% if project.status == 'Overdue' %}red{% else %}green{% endif %};">
+                {{ project.status }}
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="4">No projects found. Create one to get started!</td>
+        </tr>
+        {% endfor %}
+    </table>
+{% endblock %}
