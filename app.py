@@ -189,6 +189,28 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('login'))
+# [US3] Delete Expense Route
+@app.route('/delete_expense/<int:expense_id>')
+def delete_expense(expense_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    db = get_db_connection()
+    
+    # Güvenlik: Silinmek istenen harcamanın, giriş yapan kullanıcıya ait bir projede olup olmadığını kontrol ediyoruz (Raw SQL)
+    expense = db.execute('''
+        SELECT e.id, e.project_id 
+        FROM expenses e 
+        JOIN projects p ON e.project_id = p.id 
+        WHERE e.id = ? AND p.user_id = ?
+    ''', (expense_id, session['user_id'])).fetchone()
 
+    if expense:
+        # Eğer harcama varsa ve bu kullanıcıya aitse, silme işlemini yap
+        db.execute('DELETE FROM expenses WHERE id = ?', (expense_id,))
+        db.commit()
+        return redirect(url_for('project_detail', project_id=expense['project_id']))
+        
+    return redirect(url_for('home'))
 if __name__ == '__main__':
     app.run(debug=True)

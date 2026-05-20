@@ -8,7 +8,7 @@
     <hr>
 
     <h3>Budget & Expenses</h3>
-    <p><strong>Total Budget:</strong> ${{ project.budget }}</p>
+    <p><strong>Total Budget:</strong> ${{ project_budget }}</p>
     <p><strong>Total Expenses:</strong> ${{ total_expenses }}</p>
     <p style="font-weight: bold; color: {% if remaining_budget < 0 %}red{% else %}green{% endif %};">
         Remaining Budget: ${{ remaining_budget }}
@@ -26,15 +26,21 @@
         <tr>
             <th>Item Name</th>
             <th>Cost</th>
+            <th>Action</th>
         </tr>
         {% for expense in expenses %}
         <tr>
             <td>{{ expense.item_name }}</td>
             <td>${{ expense.cost }}</td>
+            <td>
+                <a href="{{ url_for('delete_expense', expense_id=expense.id) }}">
+                    <button style="background-color: #e74c3c;">Delete</button>
+                </a>
+            </td>
         </tr>
         {% else %}
         <tr>
-            <td colspan="2">No expenses recorded yet.</td>
+            <td colspan="3">No expenses recorded yet.</td>
         </tr>
         {% endfor %}
     </table>
@@ -72,6 +78,7 @@
         </tr>
         {% endfor %}
     </table>
+    
     <br>
     <a href="{{ url_for('home') }}">Back to Dashboard</a>
 {% endblock %}
