@@ -130,6 +130,55 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('login'))
+# Project Detail Route [US2]
+@app.route('/project/<int:project_id>', methods=('GET', 'POST'))
+def project_detail(project_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    db = get_db_connection()
+    project = db.execute('SELECT * FROM projects WHERE id = ? AND user_id = ?', (project_id, session['user_id'])).fetchone()
+    
+    if project is None:
+        return redirect(url_for('home'))
 
+    # Add new task
+    if request.method == 'POST':
+        description = request.form['description']
+        if description:
+            db.execute('INSERT INTO tasks (project_id, description) VALUES (?, ?)', (project_id, description))
+            db.commit()
+            return redirect(url_for('project_detail', project_id=project_id))
+
+    tasks = db.execute('SELECT * FROM tasks WHERE project_id = ?', (project_id,)).fetchall()
+    
+    # Calculate Progress Percentage [US2 Business Logic]
+    total_tasks = len(tasks)
+    completed_tasks = sum(1 for t in tasks if t['is_completed'])
+    progress = int((completed_tasks / total_tasks) * 100) if total_tasks > 0 else 0
+
+    return render_template('project_detail.html', project=project, tasks=tasks, progress=progress)
+
+# Toggle Task Status Route [US2]
+@app.route('/toggle_task/<int:task_id>')
+def toggle_task(task_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    db = get_db_connection()
+    task = db.execute('''
+        SELECT t.id, t.is_completed, t.project_id 
+        FROM tasks t 
+        JOIN projects p ON t.project_id = p.id 
+        WHERE t.id = ? AND p.user_id = ?
+    ''', (task_id, session['user_id'])).fetchone()
+
+    if task:
+        new_status = 0 if task['is_completed'] else 1
+        db.execute('UPDATE tasks SET is_completed = ? WHERE id = ?', (new_status, task_id))
+        db.commit()
+        return redirect(url_for('project_detail', project_id=task['project_id']))
+        
+    return redirect(url_for('home'))
 if __name__ == '__main__':
     app.run(debug=True)

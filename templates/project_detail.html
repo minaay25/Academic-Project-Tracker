@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h2>Project: {{ project.title }}</h2>
+    <p><strong>Description:</strong> {{ project.description }}</p>
+    
+    <h3>Overall Progress: %{{ progress }}</h3>
+    <hr>
+
+    <h3>Sub-Tasks</h3>
+    <form method="post">
+        <input type="text" name="description" placeholder="New task description..." required>
+        <input type="submit" value="+ Add Task">
+    </form>
+    <br>
+
+    <table border="1" cellpadding="10" cellspacing="0">
+        <tr>
+            <th>Task</th>
+            <th>Status</th>
+            <th>Action</th>
+        </tr>
+        {% for task in tasks %}
+        <tr>
+            <td>{{ task.description }}</td>
+            <td style="font-weight: bold; color: {% if task.is_completed %}green{% else %}orange{% endif %};">
+                {% if task.is_completed %}Completed{% else %}Pending{% endif %}
+            </td>
+            <td>
+                <a href="{{ url_for('toggle_task', task_id=task.id) }}">
+                    <button>Mark as {% if task.is_completed %}Pending{% else %}Completed{% endif %}</button>
+                </a>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="3">No tasks added yet.</td>
+        </tr>
+        {% endfor %}
+    </table>
+    <br>
+    <a href="{{ url_for('home') }}">Back to Dashboard</a>
+{% endblock %}
