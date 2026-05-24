@@ -212,5 +212,25 @@ def delete_expense(expense_id):
         return redirect(url_for('project_detail', project_id=expense['project_id']))
         
     return redirect(url_for('home'))
+# [CRUD] Delete Project
+@app.route('/delete_project/<int:project_id>', methods=['POST'])
+def delete_project(project_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    db = get_db_connection()
+    
+    # Güvenlik: Silinmek istenen proje gerçekten bu kullanıcıya mı ait?
+    project = db.execute('SELECT id FROM projects WHERE id = ? AND user_id = ?', (project_id, session['user_id'])).fetchone()
+
+    if project:
+        # Önce projeye ait alt görevleri ve harcamaları temizliyoruz (Veritabanı şişmesin diye)
+        db.execute('DELETE FROM tasks WHERE project_id = ?', (project_id,))
+        db.execute('DELETE FROM expenses WHERE project_id = ?', (project_id,))
+        # En son projenin kendisini siliyoruz
+        db.execute('DELETE FROM projects WHERE id = ?', (project_id,))
+        db.commit()
+        
+    return redirect(url_for('home'))
 if __name__ == '__main__':
     app.run(debug=True)
