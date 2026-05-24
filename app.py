@@ -1,6 +1,8 @@
 import sqlite3
 from datetime import datetime
 from flask import Flask, render_template, request, session, redirect, url_for, flash
+# İş mantığı fonksiyonlarımızı içeri aktarıyoruz
+from business_logic import get_deadline_status, calculate_progress, calculate_remaining_budget
 
 app = Flask(__name__)
 app.secret_key = "academic_project_tracker_secret" 
@@ -26,14 +28,8 @@ def home():
     
     for p in projects:
         p_dict = dict(p)
-        deadline_date = datetime.strptime(p['deadline'], '%Y-%m-%d').date()
-        delta = (deadline_date - today).days
-        
-        if delta < 0:
-            p_dict['status'] = 'Overdue'
-        else:
-            p_dict['status'] = f"{delta} Days Remaining"
-            
+        # [US1] Mantığı business_logic.py'den geliyor
+        p_dict['status'] = get_deadline_status(p['deadline'], today)
         project_list.append(p_dict)
 
     return render_template('dashboard.html', projects=project_list)
@@ -48,7 +44,11 @@ def create_project():
         description = request.form['description']
         start_date = request.form['start_date']
         deadline = request.form['deadline']
-        budget = request.form.get('budget', 0)
+        
+        try:
+            budget = float(request.form.get('budget', 0) or 0)
+        except ValueError:
+            budget = 0.0
         
         db = get_db_connection()
         db.execute(
@@ -60,7 +60,6 @@ def create_project():
         
     return render_template('create_project.html')
 
-# [US2 & US3] Project Detail Route
 @app.route('/project/<int:project_id>', methods=('GET', 'POST'))
 def project_detail(project_id):
     if 'user_id' not in session:
@@ -84,14 +83,20 @@ def project_detail(project_id):
     
     total_tasks = len(tasks)
     completed_tasks = sum(1 for t in tasks if t['is_completed'])
-    progress = int((completed_tasks / total_tasks) * 100) if total_tasks > 0 else 0
+    
+    # [US2] Mantığı business_logic.py'den geliyor
+    progress = calculate_progress(total_tasks, completed_tasks)
 
-    total_expenses = sum(e['cost'] for e in expenses)
-    remaining_budget = project['budget'] - total_expenses
+    project_budget = float(project['budget'] or 0)
+    total_expenses = sum(float(e['cost'] or 0) for e in expenses)
+    
+    # [US3] Mantığı business_logic.py'den geliyor
+    remaining_budget = calculate_remaining_budget(project_budget, total_expenses)
 
     return render_template(
         'project_detail.html', 
         project=project, 
+        project_budget=project_budget, 
         tasks=tasks, 
         progress=progress,
         expenses=expenses,
@@ -99,23 +104,45 @@ def project_detail(project_id):
         remaining_budget=remaining_budget
     )
 
-# [US3] Add Expense Route
 @app.route('/add_expense/<int:project_id>', methods=['POST'])
 def add_expense(project_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
         
     item_name = request.form['item_name']
-    cost = request.form['cost']
     
-    if item_name and cost:
+    try:
+        cost = float(request.form['cost'] or 0)
+    except ValueError:
+        cost = 0.0
+    
+    if item_name:
         db = get_db_connection()
         db.execute('INSERT INTO expenses (project_id, item_name, cost) VALUES (?, ?, ?)', (project_id, item_name, cost))
         db.commit()
         
     return redirect(url_for('project_detail', project_id=project_id))
 
-# [US2] Toggle Task Status
+@app.route('/delete_expense/<int:expense_id>')
+def delete_expense(expense_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    db = get_db_connection()
+    expense = db.execute('''
+        SELECT e.id, e.project_id 
+        FROM expenses e 
+        JOIN projects p ON e.project_id = p.id 
+        WHERE e.id = ? AND p.user_id = ?
+    ''', (expense_id, session['user_id'])).fetchone()
+
+    if expense:
+        db.execute('DELETE FROM expenses WHERE id = ?', (expense_id,))
+        db.commit()
+        return redirect(url_for('project_detail', project_id=expense['project_id']))
+        
+    return redirect(url_for('home'))
+
 @app.route('/toggle_task/<int:task_id>')
 def toggle_task(task_id):
     if 'user_id' not in session:
@@ -134,6 +161,53 @@ def toggle_task(task_id):
         db.execute('UPDATE tasks SET is_completed = ? WHERE id = ?', (new_status, task_id))
         db.commit()
         return redirect(url_for('project_detail', project_id=task['project_id']))
+        
+    return redirect(url_for('home'))
+
+@app.route('/edit_project/<int:project_id>', methods=('GET', 'POST'))
+def edit_project(project_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    db = get_db_connection()
+    project = db.execute('SELECT * FROM projects WHERE id = ? AND user_id = ?', (project_id, session['user_id'])).fetchone()
+    
+    if project is None:
+        return redirect(url_for('home'))
+
+    if request.method == 'POST':
+        title = request.form['title']
+        description = request.form['description']
+        start_date = request.form['start_date']
+        deadline = request.form['deadline']
+        
+        try:
+            budget = float(request.form.get('budget', 0) or 0)
+        except ValueError:
+            budget = 0.0
+        
+        db.execute(
+            'UPDATE projects SET title = ?, description = ?, start_date = ?, deadline = ?, budget = ? WHERE id = ?',
+            (title, description, start_date, deadline, budget, project_id)
+        )
+        db.commit()
+        return redirect(url_for('home'))
+        
+    return render_template('edit_project.html', project=project)
+
+@app.route('/delete_project/<int:project_id>', methods=['POST'])
+def delete_project(project_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    db = get_db_connection()
+    project = db.execute('SELECT id FROM projects WHERE id = ? AND user_id = ?', (project_id, session['user_id'])).fetchone()
+
+    if project:
+        db.execute('DELETE FROM tasks WHERE project_id = ?', (project_id,))
+        db.execute('DELETE FROM expenses WHERE project_id = ?', (project_id,))
+        db.execute('DELETE FROM projects WHERE id = ?', (project_id,))
+        db.commit()
         
     return redirect(url_for('home'))
 
@@ -189,82 +263,6 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('login'))
-# [US3] Delete Expense Route
-@app.route('/delete_expense/<int:expense_id>')
-def delete_expense(expense_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-        
-    db = get_db_connection()
-    
-    # Güvenlik: Silinmek istenen harcamanın, giriş yapan kullanıcıya ait bir projede olup olmadığını kontrol ediyoruz (Raw SQL)
-    expense = db.execute('''
-        SELECT e.id, e.project_id 
-        FROM expenses e 
-        JOIN projects p ON e.project_id = p.id 
-        WHERE e.id = ? AND p.user_id = ?
-    ''', (expense_id, session['user_id'])).fetchone()
 
-    if expense:
-        # Eğer harcama varsa ve bu kullanıcıya aitse, silme işlemini yap
-        db.execute('DELETE FROM expenses WHERE id = ?', (expense_id,))
-        db.commit()
-        return redirect(url_for('project_detail', project_id=expense['project_id']))
-        
-    return redirect(url_for('home'))
-# [CRUD] Delete Project
-@app.route('/delete_project/<int:project_id>', methods=['POST'])
-def delete_project(project_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-        
-    db = get_db_connection()
-    
-    # Güvenlik: Silinmek istenen proje gerçekten bu kullanıcıya mı ait?
-    project = db.execute('SELECT id FROM projects WHERE id = ? AND user_id = ?', (project_id, session['user_id'])).fetchone()
-
-    if project:
-        # Önce projeye ait alt görevleri ve harcamaları temizliyoruz (Veritabanı şişmesin diye)
-        db.execute('DELETE FROM tasks WHERE project_id = ?', (project_id,))
-        db.execute('DELETE FROM expenses WHERE project_id = ?', (project_id,))
-        # En son projenin kendisini siliyoruz
-        db.execute('DELETE FROM projects WHERE id = ?', (project_id,))
-        db.commit()
-        
-    return redirect(url_for('home'))
-# [CRUD] Edit Project Route
-@app.route('/edit_project/<int:project_id>', methods=('GET', 'POST'))
-def edit_project(project_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-        
-    db = get_db_connection()
-    # Önce düzenlenecek projeyi buluyoruz
-    project = db.execute('SELECT * FROM projects WHERE id = ? AND user_id = ?', (project_id, session['user_id'])).fetchone()
-    
-    if project is None:
-        return redirect(url_for('home'))
-
-    # Form gönderildiyse veritabanını güncelliyoruz (UPDATE)
-    if request.method == 'POST':
-        title = request.form['title']
-        description = request.form['description']
-        start_date = request.form['start_date']
-        deadline = request.form['deadline']
-        
-        try:
-            budget = float(request.form.get('budget', 0) or 0)
-        except ValueError:
-            budget = 0.0
-        
-        db.execute(
-            'UPDATE projects SET title = ?, description = ?, start_date = ?, deadline = ?, budget = ? WHERE id = ?',
-            (title, description, start_date, deadline, budget, project_id)
-        )
-        db.commit()
-        return redirect(url_for('home'))
-        
-    # GET isteği ise düzenleme sayfasını açıyoruz
-    return render_template('edit_project.html', project=project)
 if __name__ == '__main__':
     app.run(debug=True)
