@@ -232,5 +232,39 @@ def delete_project(project_id):
         db.commit()
         
     return redirect(url_for('home'))
+# [CRUD] Edit Project Route
+@app.route('/edit_project/<int:project_id>', methods=('GET', 'POST'))
+def edit_project(project_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    db = get_db_connection()
+    # Önce düzenlenecek projeyi buluyoruz
+    project = db.execute('SELECT * FROM projects WHERE id = ? AND user_id = ?', (project_id, session['user_id'])).fetchone()
+    
+    if project is None:
+        return redirect(url_for('home'))
+
+    # Form gönderildiyse veritabanını güncelliyoruz (UPDATE)
+    if request.method == 'POST':
+        title = request.form['title']
+        description = request.form['description']
+        start_date = request.form['start_date']
+        deadline = request.form['deadline']
+        
+        try:
+            budget = float(request.form.get('budget', 0) or 0)
+        except ValueError:
+            budget = 0.0
+        
+        db.execute(
+            'UPDATE projects SET title = ?, description = ?, start_date = ?, deadline = ?, budget = ? WHERE id = ?',
+            (title, description, start_date, deadline, budget, project_id)
+        )
+        db.commit()
+        return redirect(url_for('home'))
+        
+    # GET isteği ise düzenleme sayfasını açıyoruz
+    return render_template('edit_project.html', project=project)
 if __name__ == '__main__':
     app.run(debug=True)
