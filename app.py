@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime
 from flask import Flask, render_template, request, session, redirect, url_for, flash
-# İş mantığı fonksiyonlarımızı içeri aktarıyoruz
+from werkzeug.security import generate_password_hash, check_password_hash
 from business_logic import get_deadline_status, calculate_progress, calculate_remaining_budget
 
 app = Flask(__name__)
@@ -28,7 +28,6 @@ def home():
     
     for p in projects:
         p_dict = dict(p)
-        # [US1] Mantığı business_logic.py'den geliyor
         p_dict['status'] = get_deadline_status(p['deadline'], today)
         project_list.append(p_dict)
 
@@ -84,13 +83,11 @@ def project_detail(project_id):
     total_tasks = len(tasks)
     completed_tasks = sum(1 for t in tasks if t['is_completed'])
     
-    # [US2] Mantığı business_logic.py'den geliyor
     progress = calculate_progress(total_tasks, completed_tasks)
 
     project_budget = float(project['budget'] or 0)
     total_expenses = sum(float(e['cost'] or 0) for e in expenses)
     
-    # [US3] Mantığı business_logic.py'den geliyor
     remaining_budget = calculate_remaining_budget(project_budget, total_expenses)
 
     return render_template(
@@ -164,6 +161,27 @@ def toggle_task(task_id):
         
     return redirect(url_for('home'))
 
+# [US4] Delete Task Route
+@app.route('/delete_task/<int:task_id>')
+def delete_task(task_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    db = get_db_connection()
+    task = db.execute('''
+        SELECT t.id, t.project_id 
+        FROM tasks t 
+        JOIN projects p ON t.project_id = p.id 
+        WHERE t.id = ? AND p.user_id = ?
+    ''', (task_id, session['user_id'])).fetchone()
+
+    if task:
+        db.execute('DELETE FROM tasks WHERE id = ?', (task_id,))
+        db.commit()
+        return redirect(url_for('project_detail', project_id=task['project_id']))
+        
+    return redirect(url_for('home'))
+
 @app.route('/edit_project/<int:project_id>', methods=('GET', 'POST'))
 def edit_project(project_id):
     if 'user_id' not in session:
@@ -227,9 +245,10 @@ def register():
 
         if error is None:
             try:
-                db.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
+                hashed_password = generate_password_hash(password)
+                db.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_password))
                 db.commit()
-            except db.IntegrityError:
+            except sqlite3.IntegrityError:
                 error = f"User {username} is already registered."
             else:
                 return redirect(url_for('login'))
@@ -247,7 +266,7 @@ def login():
         error = None
         user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
 
-        if user is None or user['password'] != password:
+        if user is None or not check_password_hash(user['password'], password):
             error = 'Incorrect username or password.'
 
         if error is None:

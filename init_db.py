@@ -1,18 +1,20 @@
 import sqlite3
+from werkzeug.security import generate_password_hash
 
-def init_db():
-    connection = sqlite3.connect('database.db')
-    
-    with open('schema.sql') as f:
-        connection.executescript(f.read())
+connection = sqlite3.connect('database.db')
 
-    # Add a sample user for testing (Password is plaintext for now, will be hashed later)
-    cur = connection.cursor()
-    cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", ('testuser', '123456'))
+with open('schema.sql') as f:
+    connection.executescript(f.read())
 
-    connection.commit()
-    connection.close()
-    print("Database initialized successfully!")
+cur = connection.cursor()
 
-if __name__ == '__main__':
-    init_db()
+# Örnek kullanıcının şifresini güvenli bir şekilde hash'liyoruz
+hashed_pw = generate_password_hash('test1234')
+
+cur.execute("INSERT INTO users (username, password) VALUES (?, ?)",
+            ('testuser', hashed_pw)
+            )
+
+connection.commit()
+connection.close()
+print("Database initialized successfully with secure passwords.")
