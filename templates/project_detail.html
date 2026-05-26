@@ -1,95 +1,135 @@
 {% extends 'base.html' %}
 
 {% block content %}
-    <h2>{{ project.title }}</h2>
-    <p><strong>Description:</strong> {{ project.description }}</p>
-    <p><strong>Start Date:</strong> {{ project.start_date }}</p>
-    <p><strong>Deadline:</strong> {{ project.deadline }}</p>
-    <p><strong>Total Budget:</strong> ${{ project_budget }}</p>
 
-    <hr style="margin: 20px 0;">
+<div class="detail-header">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+        <div>
+            <div class="detail-title">{{ project.title }}</div>
+            <div style="font-size:14px; color:var(--text-muted); margin-top:4px;">{{ project.description or 'No description.' }}</div>
+        </div>
+        <div>
+            {% if deadline_status == 'Overdue' %}
+                <span class="badge badge-red" style="font-size:13px; padding:6px 14px;">🔴 Overdue</span>
+            {% elif days_left <= 3 %}
+                <span class="badge badge-yellow" style="font-size:13px; padding:6px 14px;">⚡ {{ deadline_status }}</span>
+            {% else %}
+                <span class="badge badge-green" style="font-size:13px; padding:6px 14px;">✅ {{ deadline_status }}</span>
+            {% endif %}
+        </div>
+    </div>
 
-    <h3>Sub-Tasks & Progress</h3>
-    <p><strong>Overall Progress:</strong> {{ progress }}%</p>
-    
-    <form method="POST" style="margin-bottom: 15px;">
-        <input type="text" name="description" placeholder="New Task Description" required>
-        <button type="submit" style="background-color: #3498db; color: white; padding: 5px 10px;">+ Add Task</button>
+    <div class="detail-meta">
+        <div class="detail-meta-item">
+            <span class="detail-meta-label">Start Date</span>
+            <span class="detail-meta-value">{{ project.start_date }}</span>
+        </div>
+        <div class="detail-meta-item">
+            <span class="detail-meta-label">Deadline</span>
+            <span class="detail-meta-value">{{ project.deadline }}</span>
+        </div>
+        <div class="detail-meta-item">
+            <span class="detail-meta-label">Budget</span>
+            <span class="detail-meta-value">${{ "%.2f"|format(project_budget) }}</span>
+        </div>
+        <div class="detail-meta-item">
+            <span class="detail-meta-label">Remaining</span>
+            <span class="detail-meta-value" style="color: {% if remaining_budget < 0 %}var(--red){% else %}var(--green){% endif %};">
+                ${{ "%.2f"|format(remaining_budget) }}
+            </span>
+        </div>
+    </div>
+
+    <div class="progress-wrap" style="margin-top:20px;">
+        <div class="progress-label">
+            <span>Overall Progress</span>
+            <span style="font-family:'DM Mono',monospace; font-weight:600;">{{ progress }}%</span>
+        </div>
+        <div class="progress-bar" style="height:10px;">
+            <div class="progress-fill {% if progress < 40 %}low{% elif progress < 80 %}mid{% else %}high{% endif %}"
+                 style="width: {{ progress }}%;"></div>
+        </div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-title">📋 Sub-Tasks</div>
+
+    <form method="POST" class="add-form">
+        <input type="text" name="description" placeholder="New task description..." required>
+        <button type="submit" class="btn btn-primary">+ Add Task</button>
     </form>
 
-    <table border="1" cellpadding="10" cellspacing="0" style="width: 100%; margin-bottom: 20px;">
-        <tr>
-            <th>Task Description</th>
-            <th>Status</th>
-            <th>Actions</th>
-        </tr>
+    {% if tasks %}
         {% for task in tasks %}
-        <tr>
-            <td style="{% if task.is_completed %}text-decoration: line-through; color: gray;{% endif %}">
-                {{ task.description }}
-            </td>
-            <td style="font-weight: bold; color: {% if task.is_completed %}green{% else %}orange{% endif %};">
-                {% if task.is_completed %}Completed{% else %}Pending{% endif %}
-            </td>
-            <td>
-                <a href="{{ url_for('toggle_task', task_id=task.id) }}">
-                    <button style="background-color: #f39c12; padding: 5px 10px; font-size: 12px; margin-right: 5px;">
-                        Mark as {% if task.is_completed %}Pending{% else %}Completed{% endif %}
-                    </button>
+        <div class="task-item">
+            <div class="task-check {% if task.is_completed %}done{% endif %}">
+                {% if task.is_completed %}✓{% endif %}
+            </div>
+            <div class="task-desc {% if task.is_completed %}done{% endif %}">{{ task.description }}</div>
+            <span class="task-status {% if task.is_completed %}done{% else %}pending{% endif %}">
+                {% if task.is_completed %}Done{% else %}Pending{% endif %}
+            </span>
+            <div class="task-actions">
+                <a href="{{ url_for('toggle_task', task_id=task.id) }}" class="btn btn-warning btn-sm">
+                    {% if task.is_completed %}↩ Undo{% else %}✓ Done{% endif %}
                 </a>
-                
-                <a href="{{ url_for('delete_task', task_id=task.id) }}">
-                    <button style="background-color: #e74c3c; padding: 5px 10px; font-size: 12px;" onclick="return confirm('Are you sure you want to delete this task?');">Delete</button>
-                </a>
-            </td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="3" style="text-align: center;">No tasks added yet.</td>
-        </tr>
+                <a href="{{ url_for('delete_task', task_id=task.id) }}" class="btn btn-danger btn-sm"
+                   onclick="return confirm('Delete this task?')">🗑</a>
+            </div>
+        </div>
         {% endfor %}
-    </table>
+    {% else %}
+        <div style="text-align:center; padding:24px; color:var(--text-muted); font-size:14px;">
+            No tasks yet. Add your first task above.
+        </div>
+    {% endif %}
+</div>
 
-    <hr style="margin: 20px 0;">
+<div class="panel">
+    <div class="panel-title">💰 Budget & Expenses</div>
 
-    <h3>Budget & Expenses</h3>
-    <p><strong>Total Expenses:</strong> ${{ total_expenses }}</p>
-    <p><strong>Remaining Budget:</strong> 
-        <span style="font-weight: bold; color: {% if remaining_budget < 0 %}red{% else %}green{% endif %};">
-            ${{ remaining_budget }}
-            {% if remaining_budget < 0 %} (Over Budget!){% endif %}
-        </span>
-    </p>
+    {% if project_budget > 0 %}
+    {% set pct = [(total_expenses / project_budget * 100), 100]|min %}
+    <div class="budget-bar-wrap">
+        <div class="budget-bar">
+            <div class="budget-fill {% if pct < 70 %}ok{% elif pct < 100 %}warn{% else %}over{% endif %}"
+                 style="width: {{ pct }}%;"></div>
+        </div>
+        <div class="budget-stats">
+            <span>Spent: ${{ "%.2f"|format(total_expenses) }}</span>
+            <span>Budget: ${{ "%.2f"|format(project_budget) }}</span>
+        </div>
+    </div>
+    {% if remaining_budget < 0 %}
+    <div style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:8px; padding:10px 14px; margin-bottom:16px; font-size:13px; color:#fca5a5;">
+        ⚠️ Over budget by ${{ "%.2f"|format(remaining_budget|abs) }}!
+    </div>
+    {% endif %}
+    {% endif %}
 
-    <form action="{{ url_for('add_expense', project_id=project.id) }}" method="POST" style="margin-bottom: 15px;">
-        <input type="text" name="item_name" placeholder="Expense Item" required>
-        <input type="number" step="0.01" name="cost" placeholder="Cost ($)" required>
-        <button type="submit" style="background-color: #3498db; color: white; padding: 5px 10px;">+ Add Expense</button>
+    <form action="{{ url_for('add_expense', project_id=project.id) }}" method="POST" class="add-form">
+        <input type="text" name="item_name" placeholder="Expense item name..." required>
+        <input type="number" step="0.01" name="cost" placeholder="Cost ($)" required style="max-width:140px;">
+        <button type="submit" class="btn btn-primary">+ Add</button>
     </form>
 
-    <table border="1" cellpadding="10" cellspacing="0" style="width: 100%; margin-bottom: 20px;">
-        <tr>
-            <th>Item Name</th>
-            <th>Cost</th>
-            <th>Actions</th>
-        </tr>
+    {% if expenses %}
         {% for expense in expenses %}
-        <tr>
-            <td>{{ expense.item_name }}</td>
-            <td>${{ expense.cost }}</td>
-            <td>
-                <a href="{{ url_for('delete_expense', expense_id=expense.id) }}">
-                    <button style="background-color: #e74c3c; padding: 5px 10px; font-size: 12px;" onclick="return confirm('Are you sure you want to delete this expense?');">Delete</button>
-                </a>
-            </td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="3" style="text-align: center;">No expenses recorded yet.</td>
-        </tr>
+        <div class="expense-item">
+            <div class="expense-name">{{ expense.item_name }}</div>
+            <div class="expense-cost">${{ "%.2f"|format(expense.cost) }}</div>
+            <a href="{{ url_for('delete_expense', expense_id=expense.id) }}" class="btn btn-danger btn-sm"
+               onclick="return confirm('Delete this expense?')">🗑</a>
+        </div>
         {% endfor %}
-    </table>
+    {% else %}
+        <div style="text-align:center; padding:24px; color:var(--text-muted); font-size:14px;">
+            No expenses recorded yet.
+        </div>
+    {% endif %}
+</div>
 
-    <br>
-    <a href="{{ url_for('home') }}"><button style="padding: 10px 15px;">&larr; Back to Dashboard</button></a>
+<a href="{{ url_for('home') }}" class="btn btn-ghost">← Back to Dashboard</a>
+
 {% endblock %}
