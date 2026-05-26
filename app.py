@@ -33,7 +33,6 @@ def home():
     for p in projects_raw:
         p_dict = dict(p)
 
-        # [US1] Deadline status
         status = get_deadline_status(p['deadline'], today)
         p_dict['status'] = status
         deadline_date = datetime.strptime(p['deadline'], '%Y-%m-%d').date()
@@ -42,7 +41,6 @@ def home():
         if status == 'Overdue':
             overdue_count += 1
 
-        # [US2] Task progress
         tasks = db.execute('SELECT * FROM tasks WHERE project_id = ?', (p['id'],)).fetchall()
         ptotal = len(tasks)
         pdone = sum(1 for t in tasks if t['is_completed'])
@@ -50,7 +48,6 @@ def home():
         total_tasks += ptotal
         completed_tasks += pdone
 
-        # [US3] Budget / spending
         expenses = db.execute('SELECT SUM(cost) as s FROM expenses WHERE project_id = ?', (p['id'],)).fetchone()
         spent = float(expenses['s'] or 0)
         p_dict['spent'] = spent
@@ -58,6 +55,7 @@ def home():
 
         project_list.append(p_dict)
 
+    db.close()
     return render_template('dashboard.html',
         projects=project_list,
         completed_tasks=completed_tasks,
@@ -95,6 +93,7 @@ def create_project():
             (session['user_id'], title, description, start_date, deadline, budget)
         )
         db.commit()
+        db.close()
         return redirect(url_for('home'))
 
     return render_template('create_project.html')
@@ -108,14 +107,19 @@ def project_detail(project_id):
     project = db.execute('SELECT * FROM projects WHERE id = ? AND user_id = ?',
                          (project_id, session['user_id'])).fetchone()
     if project is None:
+        db.close()
         return redirect(url_for('home'))
 
     if request.method == 'POST':
-        description = request.form.get('description')
+        description = request.form.get('description', '').strip()
         if description:
-            db.execute('INSERT INTO tasks (project_id, description) VALUES (?, ?)', (project_id, description))
+            db.execute('INSERT INTO tasks (project_id, description) VALUES (?, ?)',
+                       (project_id, description))
             db.commit()
+            db.close()
             return redirect(url_for('project_detail', project_id=project_id))
+        else:
+            flash('Task description cannot be empty.')
 
     tasks = db.execute('SELECT * FROM tasks WHERE project_id = ?', (project_id,)).fetchall()
     expenses = db.execute('SELECT * FROM expenses WHERE project_id = ?', (project_id,)).fetchall()
@@ -133,6 +137,7 @@ def project_detail(project_id):
     deadline_date = datetime.strptime(project['deadline'], '%Y-%m-%d').date()
     days_left = (deadline_date - today).days
 
+    db.close()
     return render_template('project_detail.html',
         project=project,
         project_budget=project_budget,
@@ -149,16 +154,28 @@ def project_detail(project_id):
 def add_expense(project_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    item_name = request.form['item_name']
+
+    db = get_db_connection()
+    project = db.execute('SELECT id FROM projects WHERE id = ? AND user_id = ?',
+                         (project_id, session['user_id'])).fetchone()
+    if project is None:
+        db.close()
+        return redirect(url_for('home'))
+
+    item_name = request.form.get('item_name', '').strip()
     try:
-        cost = float(request.form['cost'] or 0)
+        cost = float(request.form.get('cost', 0) or 0)
     except ValueError:
         cost = 0.0
-    if item_name:
-        db = get_db_connection()
+
+    if item_name and cost >= 0:
         db.execute('INSERT INTO expenses (project_id, item_name, cost) VALUES (?, ?, ?)',
                    (project_id, item_name, cost))
         db.commit()
+    else:
+        flash('Please enter a valid expense name and cost.')
+
+    db.close()
     return redirect(url_for('project_detail', project_id=project_id))
 
 @app.route('/delete_expense/<int:expense_id>')
@@ -172,9 +189,12 @@ def delete_expense(expense_id):
         WHERE e.id = ? AND p.user_id = ?
     ''', (expense_id, session['user_id'])).fetchone()
     if expense:
+        project_id = expense['project_id']
         db.execute('DELETE FROM expenses WHERE id = ?', (expense_id,))
         db.commit()
-        return redirect(url_for('project_detail', project_id=expense['project_id']))
+        db.close()
+        return redirect(url_for('project_detail', project_id=project_id))
+    db.close()
     return redirect(url_for('home'))
 
 @app.route('/toggle_task/<int:task_id>')
@@ -189,12 +209,14 @@ def toggle_task(task_id):
     ''', (task_id, session['user_id'])).fetchone()
     if task:
         new_status = 0 if task['is_completed'] else 1
+        project_id = task['project_id']
         db.execute('UPDATE tasks SET is_completed = ? WHERE id = ?', (new_status, task_id))
         db.commit()
-        return redirect(url_for('project_detail', project_id=task['project_id']))
+        db.close()
+        return redirect(url_for('project_detail', project_id=project_id))
+    db.close()
     return redirect(url_for('home'))
 
-# [US4] Delete Task
 @app.route('/delete_task/<int:task_id>')
 def delete_task(task_id):
     if 'user_id' not in session:
@@ -206,9 +228,12 @@ def delete_task(task_id):
         WHERE t.id = ? AND p.user_id = ?
     ''', (task_id, session['user_id'])).fetchone()
     if task:
+        project_id = task['project_id']
         db.execute('DELETE FROM tasks WHERE id = ?', (task_id,))
         db.commit()
-        return redirect(url_for('project_detail', project_id=task['project_id']))
+        db.close()
+        return redirect(url_for('project_detail', project_id=project_id))
+    db.close()
     return redirect(url_for('home'))
 
 @app.route('/edit_project/<int:project_id>', methods=('GET', 'POST'))
@@ -219,6 +244,7 @@ def edit_project(project_id):
     project = db.execute('SELECT * FROM projects WHERE id = ? AND user_id = ?',
                          (project_id, session['user_id'])).fetchone()
     if project is None:
+        db.close()
         return redirect(url_for('home'))
 
     if request.method == 'POST':
@@ -240,8 +266,10 @@ def edit_project(project_id):
             (title, description, start_date, deadline, budget, project_id)
         )
         db.commit()
+        db.close()
         return redirect(url_for('home'))
 
+    db.close()
     return render_template('edit_project.html', project=project)
 
 @app.route('/delete_project/<int:project_id>', methods=['POST'])
@@ -256,6 +284,7 @@ def delete_project(project_id):
         db.execute('DELETE FROM expenses WHERE project_id = ?', (project_id,))
         db.execute('DELETE FROM projects WHERE id = ?', (project_id,))
         db.commit()
+    db.close()
     return redirect(url_for('home'))
 
 @app.route('/register', methods=('GET', 'POST'))
@@ -278,8 +307,10 @@ def register():
             except sqlite3.IntegrityError:
                 error = f"User {username} is already registered."
             else:
+                db.close()
                 return redirect(url_for('login'))
         flash(error)
+        db.close()
     return render_template('register.html')
 
 @app.route('/login', methods=('GET', 'POST'))
@@ -296,8 +327,10 @@ def login():
             session.clear()
             session['user_id'] = user['id']
             session['username'] = user['username']
+            db.close()
             return redirect(url_for('home'))
         flash(error)
+        db.close()
     return render_template('login.html')
 
 @app.route('/logout')
